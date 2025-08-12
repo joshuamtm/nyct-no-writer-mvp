@@ -65,38 +65,32 @@ function App() {
 
       const data = await response.json();
       
-      // For now, use mock data if backend doesn't return proper analysis
-      const mockSummary: ExtractedProposalData = {
-        organizationName: extractOrganizationName(file.text_content) || 'Organization Name',
-        organizationMission: 'To provide essential services to the community',
-        foundingYear: extractFoundingYear(file.text_content) || '2014',
-        grantAmount: extractGrantAmount(file.text_content) || '$150,000',
-        projectDescription: extractProjectDescription(file.text_content) || 'Program to support community initiatives',
-        targetPopulation: 'Underserved communities in Queens',
-        geographicScope: 'Queens, NY',
-        currentBudget: '$123,000',
-        projectBudget: '$285,000',
-        peopleServed: '1,000 individuals',
-        keyDeliverables: [
-          'Expand service capacity',
-          'Implement new programs',
-          'Increase community outreach'
-        ],
-        timeline: '12 months'
-      };
-
-      setProposalSummary(data.summary || mockSummary);
+      // Use the actual data from the API
+      if (data.summary) {
+        setProposalSummary(data.summary);
+      } else {
+        // Only use basic fallback if API returns no summary
+        const fallbackSummary: ExtractedProposalData = {
+          organizationName: extractOrganizationName(file.text_content) || 'Organization',
+          grantAmount: extractGrantAmount(file.text_content) || 'Amount not specified',
+          projectDescription: file.text_content.substring(0, 200) || 'Project description',
+          targetPopulation: 'Community members',
+          geographicScope: 'Local area'
+        };
+        setProposalSummary(fallbackSummary);
+      }
     } catch (error) {
       console.error('Error analyzing proposal:', error);
-      // Use mock data as fallback
-      const mockSummary: ExtractedProposalData = {
-        organizationName: 'Sample Organization',
-        grantAmount: '$100,000',
-        projectDescription: 'Community support program',
-        targetPopulation: 'Local community members',
-        geographicScope: 'New York City'
+      // Show error but still try to extract basic info
+      alert('Note: Using basic text extraction. For full AI analysis, ensure Supabase functions are configured.');
+      const basicSummary: ExtractedProposalData = {
+        organizationName: extractOrganizationName(file.text_content) || 'Organization',
+        grantAmount: extractGrantAmount(file.text_content) || 'Funding amount not specified',
+        projectDescription: file.text_content.substring(0, 300) || 'See uploaded document',
+        targetPopulation: 'See proposal details',
+        geographicScope: 'See proposal details'
       };
-      setProposalSummary(mockSummary);
+      setProposalSummary(basicSummary);
     } finally {
       setIsAnalyzing(false);
     }

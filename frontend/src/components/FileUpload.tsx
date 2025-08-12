@@ -26,28 +26,40 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadedFile })
     // Validate file type
     const allowedTypes = [
       'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',  // Allow text files for testing
+      'application/msword'
     ];
     
-    if (!allowedTypes.includes(file.type)) {
-      setError('Only PDF and Word documents are allowed.');
+    // Allow text files or if no type detected (some browsers)
+    if (!allowedTypes.includes(file.type) && file.type !== '') {
+      setError('Only PDF, Word documents, and text files are allowed.');
       setIsUploading(false);
       return;
     }
 
     try {
-      // For now, create mock upload response since backend isn't deployed yet
-      // This simulates the backend response structure
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate upload time
+      // Read actual file content
+      let fileContent = '';
       
-      const mockUploadedFile: UploadedFile = {
+      if (file.type === 'application/pdf') {
+        // For PDF files, we'll pass them through as-is
+        // The backend or Supabase function will handle extraction
+        fileContent = `[PDF File: ${file.name}] - Content will be extracted by backend`;
+      } else {
+        // For text-based files, read the content
+        fileContent = await file.text();
+      }
+      
+      // Create the uploaded file object with real content
+      const uploadedFile: UploadedFile = {
         proposal_hash: Math.random().toString(36).substring(7),
-        text_content: `Mock extracted text from ${file.name}. This is a sample proposal text that would normally be extracted from the uploaded PDF or Word document. The actual text extraction will work once the backend is deployed with real document processing capabilities.`,
+        text_content: fileContent || `Content from ${file.name}`,
         filename: file.name,
         size: file.size
       };
 
-      onFileUploaded(mockUploadedFile);
+      onFileUploaded(uploadedFile);
     } catch (error) {
       console.error('Upload error:', error);
       setError('Failed to upload file. Please try again.');
@@ -142,7 +154,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadedFile })
           id="file-input"
           type="file"
           className="hidden"
-          accept=".pdf,.docx"
+          accept=".pdf,.docx,.txt,.doc"
           onChange={handleFileSelect}
           disabled={isUploading}
         />
