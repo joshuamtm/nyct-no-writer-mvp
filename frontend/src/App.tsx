@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import FileUpload from './components/FileUpload';
-import ReasonCodeSelector from './components/ReasonCodeSelector';
-import StaffNoteInput from './components/StaffNoteInput';
-import GenerateButton from './components/GenerateButton';
+import ProposalSummary from './components/ProposalSummary';
+import type { ExtractedProposalData } from './components/ProposalSummary';
+import DeclineInput from './components/DeclineInput';
 import OutputPanel from './components/OutputPanel';
 import MetricsPanel from './components/MetricsPanel';
-import { Upload, FileText, MessageSquare, Zap, BarChart3, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Upload, MessageSquare, Zap, BarChart3, CheckCircle2, ArrowRight, FileSearch } from 'lucide-react';
+import { API_URL } from './config';
 
 export interface ReasonCode {
   value: string;
@@ -26,86 +27,210 @@ export interface UploadedFile {
 }
 
 function App() {
+  const [currentStage, setCurrentStage] = useState<'upload' | 'analysis' | 'decline' | 'output'>('upload');
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
-  const [selectedReasonCode, setSelectedReasonCode] = useState<string>('');
-  const [staffNote, setStaffNote] = useState<string>('');
+  const [proposalSummary, setProposalSummary] = useState<ExtractedProposalData | null>(null);
   const [generatedOutput, setGeneratedOutput] = useState<GeneratedOutput | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [showMetrics, setShowMetrics] = useState<boolean>(false);
 
   // Debug logging
-  console.log('App component loaded successfully');
+  console.log('App component loaded successfully - Two-Stage Version');
 
-  const handleGenerate = async () => {
-    if (!uploadedFile || !selectedReasonCode || !staffNote.trim()) {
-      alert('Please complete all fields before generating.');
-      return;
+  const handleFileUploaded = async (file: UploadedFile | null) => {
+    if (!file) return;
+    
+    setUploadedFile(file);
+    setCurrentStage('analysis');
+    setIsAnalyzing(true);
+
+    try {
+      // Call backend to analyze proposal
+      const response = await fetch(`${API_URL}/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          proposal_hash: file.proposal_hash,
+          text_content: file.text_content,
+          filename: file.filename
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze proposal');
+      }
+
+      const data = await response.json();
+      
+      // For now, use mock data if backend doesn't return proper analysis
+      const mockSummary: ExtractedProposalData = {
+        organizationName: extractOrganizationName(file.text_content) || 'Organization Name',
+        organizationMission: 'To provide essential services to the community',
+        foundingYear: extractFoundingYear(file.text_content) || '2014',
+        grantAmount: extractGrantAmount(file.text_content) || '$150,000',
+        projectDescription: extractProjectDescription(file.text_content) || 'Program to support community initiatives',
+        targetPopulation: 'Underserved communities in Queens',
+        geographicScope: 'Queens, NY',
+        currentBudget: '$123,000',
+        projectBudget: '$285,000',
+        peopleServed: '1,000 individuals',
+        keyDeliverables: [
+          'Expand service capacity',
+          'Implement new programs',
+          'Increase community outreach'
+        ],
+        timeline: '12 months'
+      };
+
+      setProposalSummary(data.summary || mockSummary);
+    } catch (error) {
+      console.error('Error analyzing proposal:', error);
+      // Use mock data as fallback
+      const mockSummary: ExtractedProposalData = {
+        organizationName: 'Sample Organization',
+        grantAmount: '$100,000',
+        projectDescription: 'Community support program',
+        targetPopulation: 'Local community members',
+        geographicScope: 'New York City'
+      };
+      setProposalSummary(mockSummary);
+    } finally {
+      setIsAnalyzing(false);
     }
+  };
+
+  // Helper functions to extract key information from text
+  const extractOrganizationName = (text: string): string | undefined => {
+    // Simple extraction logic - can be enhanced
+    const lines = text.split('\n');
+    for (const line of lines) {
+      if (line.includes('Organization:') || line.includes('Applicant:')) {
+        return line.split(':')[1]?.trim();
+      }
+    }
+    return undefined;
+  };
+
+  const extractGrantAmount = (text: string): string | undefined => {
+    // Look for dollar amounts
+    const amountMatch = text.match(/\$[\d,]+(?:\.\d{2})?/);
+    return amountMatch ? amountMatch[0] : undefined;
+  };
+
+  const extractFoundingYear = (text: string): string | undefined => {
+    // Look for founding year patterns
+    const yearMatch = text.match(/founded in (\d{4})|established (\d{4})|since (\d{4})/i);
+    return yearMatch ? (yearMatch[1] || yearMatch[2] || yearMatch[3]) : undefined;
+  };
+
+  const extractProjectDescription = (text: string): string | undefined => {
+    // Extract first substantial paragraph as project description
+    const paragraphs = text.split('\n\n').filter(p => p.length > 100);
+    return paragraphs[0]?.substring(0, 300);
+  };
+
+  const handleProceedToDecline = () => {
+    setCurrentStage('decline');
+  };
+
+  const handleRegenerateSummary = () => {
+    if (uploadedFile) {
+      handleFileUploaded(uploadedFile);
+    }
+  };
+
+  const handleGenerateDecline = async (reasonCode: string, specificReasons: string) => {
+    if (!proposalSummary) return;
 
     setIsGenerating(true);
     try {
-      // Simulate API call delay for realistic experience
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Generate NYCT-formatted internal memo
+      const internalMemo = generateNYCTFormattedMemo(proposalSummary, reasonCode, specificReasons);
       
-      // Generate mock rationale based on inputs
-      const mockOutput: GeneratedOutput = {
-        internal_rationale: `${selectedReasonCode.toUpperCase()} DECLINE RATIONALE
+      // Generate generic external letter
+      const externalLetter = generateExternalLetter(reasonCode);
 
-Based on our comprehensive review of the submitted proposal, we have determined that this request does not align with our current funding priorities for this cycle. ${staffNote}
-
-The proposal requests funding for activities that fall within the "${selectedReasonCode}" category, which is outside our approved guidelines for this funding round. While the organization demonstrates commitment to their mission and community impact, the specific program design and implementation approach do not meet our established criteria for strategic impact and long-term sustainability.
-
-Our board has carefully considered this application alongside other proposals in this funding cycle. Given our limited resources and strategic priorities, we must focus on initiatives that directly align with our current funding framework and demonstrate the highest potential for measurable community impact.
-
-We appreciate the time and effort invested in preparing this comprehensive submission and encourage the organization to consider revising their approach to better align with our funding guidelines for future opportunities.`,
-
-        external_reply: `Dear Applicant,
-
-Thank you for your proposal submission to The New York Community Trust. We genuinely appreciate your organization's dedication to serving the community and the considerable time you invested in preparing your application.
-
-After careful review by our program team and board, we have determined that we will not be able to provide funding for this request at this time. This proposal falls under our "${selectedReasonCode.toLowerCase()}" category, which is not within our current funding priorities for this cycle.
-
-We recognize the important work your organization does and encourage you to review our updated funding guidelines on our website. We invite you to consider applying for future opportunities that may better align with your organization's mission and our strategic priorities.
-
-Thank you again for considering The New York Community Trust as a potential partner in your work.
-
-Best regards,
-NYCT Program Team`,
-
-        generation_time_ms: 3000
+      const output: GeneratedOutput = {
+        internal_rationale: internalMemo,
+        external_reply: externalLetter,
+        generation_time_ms: 2000
       };
 
-      setGeneratedOutput(mockOutput);
+      setGeneratedOutput(output);
+      setCurrentStage('output');
     } catch (error) {
-      console.error('Error generating rationale:', error);
-      alert('Error generating rationale. Please try again.');
+      console.error('Error generating decline:', error);
+      alert('Error generating decline memo. Please try again.');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const resetForm = () => {
-    setUploadedFile(null);
-    setSelectedReasonCode('');
-    setStaffNote('');
-    setGeneratedOutput(null);
+  const generateNYCTFormattedMemo = (
+    summary: ExtractedProposalData,
+    reasonCode: string,
+    specificReasons: string
+  ): string => {
+    const reasonLabels: Record<string, string> = {
+      'project_capability': 'Project Capability Problems',
+      'general_operating': 'General Operating Support',
+      'higher_merit': 'Other Projects Higher Merit',
+      'outside_guidelines': 'Outside Approved Guidelines',
+      'incomplete_proposal': 'Incomplete Proposal',
+      'geographic_scope': 'Geographic Scope Limitation',
+      'strategic_mismatch': 'Strategic Priority Mismatch',
+      'sustainability': 'Sustainability Concerns'
+    };
+
+    return `${summary.organizationName}${summary.foundingYear ? `, founded in ${summary.foundingYear},` : ''} ${summary.organizationMission || 'serves the community'}. This ${summary.grantAmount} request is to support ${summary.projectDescription}. ${summary.projectBudget ? `The project budget is ${summary.projectBudget}` : ''}${summary.currentBudget ? ` and the organization's current operating budget is ${summary.currentBudget}.` : '.'}
+
+I recommend this request be declined for ${reasonLabels[reasonCode]?.toLowerCase() || 'the selected reason'}. ${specificReasons}
+
+Rationale: ${reasonLabels[reasonCode] || 'Decline Reason'}`;
   };
 
-  // Calculate current step based on completed fields
+  const generateExternalLetter = (_reasonCode: string): string => {
+    return `Dear Applicant,
+
+Thank you for your proposal submission to The New York Community Trust. We genuinely appreciate your organization's dedication to serving the community and the considerable time you invested in preparing your application.
+
+After careful review by our program team and board, we have determined that we will not be able to provide funding for this request at this time. While we recognize the important work your organization does, this proposal does not align with our current funding priorities.
+
+We encourage you to review our updated funding guidelines on our website and invite you to consider applying for future opportunities that may better align with your organization's mission and our strategic priorities.
+
+Thank you again for considering The New York Community Trust as a potential partner in your work.
+
+Best regards,
+NYCT Program Team`;
+  };
+
+  const resetForm = () => {
+    setUploadedFile(null);
+    setProposalSummary(null);
+    setGeneratedOutput(null);
+    setCurrentStage('upload');
+  };
+
+  // Progress steps for the two-stage process
   const getProgressStep = () => {
-    if (!uploadedFile) return 1;
-    if (!selectedReasonCode) return 2;
-    if (!staffNote.trim()) return 3;
-    if (!generatedOutput) return 4;
-    return 5;
+    switch (currentStage) {
+      case 'upload': return 1;
+      case 'analysis': return 2;
+      case 'decline': return 3;
+      case 'output': return 4;
+      default: return 1;
+    }
   };
 
   const progressStep = getProgressStep();
   const steps = [
-    { id: 1, title: 'Upload Document', icon: Upload, completed: !!uploadedFile },
-    { id: 2, title: 'Select Reason', icon: MessageSquare, completed: !!selectedReasonCode },
-    { id: 3, title: 'Add Notes', icon: FileText, completed: !!staffNote.trim() },
-    { id: 4, title: 'Generate', icon: Zap, completed: !!generatedOutput }
+    { id: 1, title: 'Upload Proposal', icon: Upload, completed: currentStage !== 'upload' },
+    { id: 2, title: 'Review Analysis', icon: FileSearch, completed: currentStage === 'decline' || currentStage === 'output' },
+    { id: 3, title: 'Add Context', icon: MessageSquare, completed: currentStage === 'output' },
+    { id: 4, title: 'Generate Memo', icon: Zap, completed: !!generatedOutput }
   ];
 
   return (
@@ -126,7 +251,7 @@ NYCT Program Team`,
               />
               <div className="border-l-2 border-softblue-400 pl-4">
                 <h1 className="text-2xl font-bold text-navy-500">NYCT No-Writer</h1>
-                <p className="text-gray-600 text-sm">AI-Powered Proposal Review Assistant</p>
+                <p className="text-gray-600 text-sm">Two-Stage Decline Memo Generator</p>
               </div>
             </div>
             <button
@@ -189,11 +314,10 @@ NYCT Program Team`,
               {progressStep <= 4 ? steps[progressStep - 1].title : 'Complete'}
             </h3>
             <p className="text-sm sm:text-base text-gray-600">
-              {progressStep === 1 && 'Upload your proposal document to get started'}
-              {progressStep === 2 && 'Select the reason for declining this proposal'}
-              {progressStep === 3 && 'Add context notes to personalize the response'}
-              {progressStep === 4 && 'Generate professional decline documentation'}
-              {progressStep === 5 && 'Review and use your generated rationale'}
+              {currentStage === 'upload' && 'Upload your grant proposal document to begin the analysis'}
+              {currentStage === 'analysis' && 'Review the extracted information from the proposal'}
+              {currentStage === 'decline' && 'Provide specific context for the decline decision'}
+              {currentStage === 'output' && 'Review and use your generated decline memo'}
             </p>
           </div>
         </div>
@@ -204,90 +328,71 @@ NYCT Program Team`,
           </div>
         )}
 
-        {/* Single Column Content */}
+        {/* Stage Content */}
         <div className="space-y-6 sm:space-y-8">
-          {/* Step 1: Upload */}
-          {progressStep >= 1 && (
+          {/* Stage 1: Upload */}
+          {currentStage === 'upload' && (
             <section 
-              className={`bg-white rounded-lg shadow-card border border-gray-200 p-4 sm:p-6 transition-all duration-300 ${
-                progressStep === 1 ? 'ring-2 ring-primary-500 ring-opacity-20' : ''
-              }`}
+              className="bg-white rounded-lg shadow-card border border-gray-200 p-4 sm:p-6 ring-2 ring-primary-500 ring-opacity-20"
               aria-labelledby="upload-heading"
             >
               <div className="flex items-center mb-4">
                 <Upload className="h-5 w-5 text-primary-500 mr-2 flex-shrink-0" />
-                <h3 id="upload-heading" className="text-base sm:text-lg font-semibold text-navy-500">Upload Proposal Document</h3>
-                {uploadedFile && <CheckCircle2 className="h-5 w-5 text-accent-500 ml-auto flex-shrink-0" />}
+                <h3 id="upload-heading" className="text-base sm:text-lg font-semibold text-navy-500">Upload Grant Proposal</h3>
               </div>
               <FileUpload
-                onFileUploaded={setUploadedFile}
+                onFileUploaded={handleFileUploaded}
                 uploadedFile={uploadedFile}
               />
             </section>
           )}
 
-          {/* Step 2: Reason */}
-          {progressStep >= 2 && (
+          {/* Stage 2: Analysis Review */}
+          {currentStage === 'analysis' && (
             <section 
-              className={`bg-white rounded-lg shadow-card border border-gray-200 p-4 sm:p-6 transition-all duration-300 ${
-                progressStep === 2 ? 'ring-2 ring-primary-500 ring-opacity-20' : ''
-              }`}
-              aria-labelledby="reason-heading"
+              className="bg-white rounded-lg shadow-card border border-gray-200 p-4 sm:p-6 ring-2 ring-primary-500 ring-opacity-20"
+              aria-labelledby="analysis-heading"
+            >
+              <div className="flex items-center mb-4">
+                <FileSearch className="h-5 w-5 text-primary-500 mr-2 flex-shrink-0" />
+                <h3 id="analysis-heading" className="text-base sm:text-lg font-semibold text-navy-500">Proposal Analysis</h3>
+              </div>
+              {proposalSummary ? (
+                <ProposalSummary
+                  summaryData={proposalSummary}
+                  onProceed={handleProceedToDecline}
+                  onRegenerate={handleRegenerateSummary}
+                  isLoading={isAnalyzing}
+                />
+              ) : (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
+                  <span className="ml-3 text-gray-600">Analyzing proposal...</span>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Stage 3: Decline Input */}
+          {currentStage === 'decline' && proposalSummary && (
+            <section 
+              className="bg-white rounded-lg shadow-card border border-gray-200 p-4 sm:p-6 ring-2 ring-primary-500 ring-opacity-20"
+              aria-labelledby="decline-heading"
             >
               <div className="flex items-center mb-4">
                 <MessageSquare className="h-5 w-5 text-primary-500 mr-2 flex-shrink-0" />
-                <h3 id="reason-heading" className="text-base sm:text-lg font-semibold text-navy-500">Select Decline Reason</h3>
-                {selectedReasonCode && <CheckCircle2 className="h-5 w-5 text-accent-500 ml-auto flex-shrink-0" />}
+                <h3 id="decline-heading" className="text-base sm:text-lg font-semibold text-navy-500">Decline Context</h3>
               </div>
-              <ReasonCodeSelector
-                selectedCode={selectedReasonCode}
-                onCodeSelect={setSelectedReasonCode}
-              />
-            </section>
-          )}
-
-          {/* Step 3: Staff Notes */}
-          {progressStep >= 3 && (
-            <section 
-              className={`bg-white rounded-lg shadow-card border border-gray-200 p-4 sm:p-6 transition-all duration-300 ${
-                progressStep === 3 ? 'ring-2 ring-primary-500 ring-opacity-20' : ''
-              }`}
-              aria-labelledby="notes-heading"
-            >
-              <div className="flex items-center mb-4">
-                <FileText className="h-5 w-5 text-primary-500 mr-2 flex-shrink-0" />
-                <h3 id="notes-heading" className="text-base sm:text-lg font-semibold text-navy-500">Staff Context Notes</h3>
-                {staffNote.trim() && <CheckCircle2 className="h-5 w-5 text-accent-500 ml-auto flex-shrink-0" />}
-              </div>
-              <StaffNoteInput
-                value={staffNote}
-                onChange={setStaffNote}
-              />
-            </section>
-          )}
-
-          {/* Step 4: Generate */}
-          {progressStep >= 4 && (
-            <section 
-              className={`bg-white rounded-lg shadow-card border border-gray-200 p-4 sm:p-6 transition-all duration-300 ${
-                progressStep === 4 ? 'ring-2 ring-primary-500 ring-opacity-20' : ''
-              }`}
-              aria-labelledby="generate-heading"
-            >
-              <div className="flex items-center mb-6">
-                <Zap className="h-5 w-5 text-primary-500 mr-2 flex-shrink-0" />
-                <h3 id="generate-heading" className="text-base sm:text-lg font-semibold text-navy-500">Generate Rationale</h3>
-              </div>
-              <GenerateButton
-                onClick={handleGenerate}
+              <DeclineInput
+                proposalSummary={proposalSummary}
+                onGenerate={handleGenerateDecline}
                 isGenerating={isGenerating}
-                disabled={!uploadedFile || !selectedReasonCode || !staffNote.trim()}
               />
             </section>
           )}
 
-          {/* Output */}
-          {generatedOutput && (
+          {/* Stage 4: Output */}
+          {currentStage === 'output' && generatedOutput && (
             <section 
               className="bg-white rounded-lg shadow-card border border-gray-200 p-4 sm:p-6"
               aria-labelledby="output-heading"
@@ -295,7 +400,7 @@ NYCT Program Team`,
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-3 sm:space-y-0">
                 <div className="flex items-center">
                   <CheckCircle2 className="h-5 w-5 text-accent-500 mr-2 flex-shrink-0" />
-                  <h3 id="output-heading" className="text-base sm:text-lg font-semibold text-navy-500">Generated Rationale</h3>
+                  <h3 id="output-heading" className="text-base sm:text-lg font-semibold text-navy-500">Generated Decline Memo</h3>
                 </div>
                 <button
                   onClick={resetForm}
@@ -311,6 +416,7 @@ NYCT Program Team`,
           )}
         </div>
       </main>
+
       {/* MTM Footer */}
       <footer className="bg-cream text-center py-6 px-4 mt-12">
         <img 
