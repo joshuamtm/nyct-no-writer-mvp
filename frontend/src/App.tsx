@@ -6,7 +6,7 @@ import DeclineInput from './components/DeclineInput';
 import OutputPanel from './components/OutputPanel';
 import MetricsPanel from './components/MetricsPanel';
 import { Upload, MessageSquare, Zap, BarChart3, CheckCircle2, ArrowRight, FileSearch } from 'lucide-react';
-import { API_URL } from './config';
+import { API_URL, ANALYZE_URL, GENERATE_URL } from './config';
 
 export interface ReasonCode {
   value: string;
@@ -47,7 +47,7 @@ function App() {
 
     try {
       // Call backend to analyze proposal
-      const response = await fetch(`${API_URL}/analyze`, {
+      const response = await fetch(ANALYZE_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
