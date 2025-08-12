@@ -43,11 +43,24 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadedFile })
       let fileContent = '';
       
       if (file.type === 'application/pdf') {
-        // For PDF files, we'll pass them through as-is
-        // The backend or Supabase function will handle extraction
-        fileContent = `[PDF File: ${file.name}] - Content will be extracted by backend`;
+        // For PDF files, convert to base64 so we can send to backend
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve) => {
+          reader.onload = () => {
+            const base64 = reader.result as string;
+            resolve(base64);
+          };
+        });
+        reader.readAsDataURL(file);
+        const base64Data = await base64Promise;
+        
+        // Extract just the base64 content (remove the data:application/pdf;base64, prefix)
+        fileContent = base64Data.split(',')[1] || '';
+        
+        // Add a marker to indicate this is base64 PDF data
+        fileContent = `PDF_BASE64:${fileContent}`;
       } else {
-        // For text-based files, read the content
+        // For text-based files, read the content directly
         fileContent = await file.text();
       }
       
